@@ -1,5 +1,6 @@
 package com.project.scheduler.entity;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -27,5 +28,7 @@ public class RecordsPgEntity {
     private String description;
 
     @Column(name = "record_publish_date")
-    private Date record_publish_date;
+    @JsonProperty("record_publish_date")
+    private Date recordPublishDate;
+
 }

@@ -8,9 +8,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.core.job.Job;
 import org.springframework.batch.core.job.builder.JobBuilder;
+import org.springframework.batch.core.listener.ChunkListener;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.Step;
 import org.springframework.batch.core.step.builder.StepBuilder;
+import org.springframework.batch.infrastructure.item.Chunk;
 import org.springframework.batch.infrastructure.item.ItemProcessor;
 import org.springframework.batch.infrastructure.item.data.MongoItemWriter;
 import org.springframework.batch.infrastructure.item.data.RepositoryItemReader;
@@ -19,8 +21,13 @@ import org.springframework.batch.infrastructure.item.data.builder.RepositoryItem
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.domain.Sort;
-import org.springframework.data.mongodb.core.MongoOperations;
+import org.springframework.data.mongodb.MongoDatabaseFactory;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.SimpleMongoClientDatabaseFactory;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.Date;
 import java.util.Map;
 
 @Configuration
@@ -28,43 +35,52 @@ import java.util.Map;
 public class BatchConfig {
 
     private final RecordsPgEntityRepository pgRepository;
-    private final MongoOperations mongoOperations;
+    LocalDate monday = LocalDate.now().minusDays(6);
+    LocalDate sunday = LocalDate.now();
 
-    public BatchConfig(RecordsPgEntityRepository pgRepository, MongoOperations mongoOperations) {
+    public BatchConfig(RecordsPgEntityRepository pgRepository) {
         this.pgRepository = pgRepository;
-        this.mongoOperations = mongoOperations;
-    }
-
-
-    @Bean
-    public Job batchjob(JobRepository jobRepository){
-        return new JobBuilder("Update Job", jobRepository)
-//                .incrementer() -> use in scheduler
-                .start(chunkStep(jobRepository))
-                .build();
     }
 
     @Bean
-    public Step chunkStep(JobRepository jobRepository){
-        return new StepBuilder("chunk", jobRepository)
-                .<RecordsPgEntity, RecordsDocument>chunk(1000)
-                .reader(postgresReader())
-                .processor(processor())
-                .writer(mongoWriter())
-                .build();
+    public Job batchjob(JobRepository jobRepository) {
+        return new JobBuilder("Batch Loader Job", jobRepository).start(chunkStep(jobRepository)).build();
+    }
 
+    @Bean
+    public ChunkListener migrationChunkListener() {
+        return new ChunkListener<RecordsPgEntity, RecordsDocument>() {
+            @Override
+            public void afterChunk(Chunk<RecordsDocument> chunk) {  // New signature
+                log.info("Wrote {} records to migrationdb", chunk.size());
+            }
+
+            @Override
+            public void beforeChunk(Chunk<RecordsPgEntity> chunk) {
+                log.info("Reading chunk of {} PG records", chunk.size());
+            }
+        };
+    }
+
+    @Bean
+    public Step chunkStep(JobRepository jobRepository) {
+        return new StepBuilder("chunk", jobRepository).<RecordsPgEntity, RecordsDocument>chunk(1000).reader(postgresReader()).processor(processor()).writer(mongoWriter()).listener(migrationChunkListener()).build();
     }
 
     @Bean
     @StepScope
     public RepositoryItemReader<RecordsPgEntity> postgresReader() {
-        return new RepositoryItemReaderBuilder<RecordsPgEntity>()
-                .name("Postgres Job Reader")
-                .repository(pgRepository)
-                .methodName("findAll")
-                .pageSize(1000)
-                .sorts(Map.of("id", Sort.Direction.ASC))
-                .build();
+
+        Date startDate = Date.from(monday.atStartOfDay(ZoneId.systemDefault()).toInstant());
+        Date endDate = Date.from(sunday.atTime(23, 59, 59).atZone(ZoneId.systemDefault()).toInstant());
+
+        long totalCount = pgRepository.countByRecordPublishDateBetween(startDate, endDate);
+        if (totalCount == 0) {
+            log.warn("No records Mon({})-Sun({}) - skipping reader", startDate.toInstant(), endDate.toInstant());// Return empty reader (Spring Batch handles gracefully)
+        } else {
+            log.info("Migrating {} records Mon({})-Sun({})", totalCount, startDate.toInstant(), endDate.toInstant());
+        }
+        return new RepositoryItemReaderBuilder<RecordsPgEntity>().name("Postgres Job Reader").repository(pgRepository).methodName("findByRecordPublishDateBetween").arguments(startDate, endDate).pageSize(1000).sorts(Map.of("id", Sort.Direction.ASC)).build();
     }
 
     @Bean
@@ -76,8 +92,9 @@ public class BatchConfig {
     @Bean
     @StepScope
     public MongoItemWriter<RecordsDocument> mongoWriter() {
-        return new MongoItemWriterBuilder<RecordsDocument >().template(mongoOperations).collection("records").build();
+        MongoDatabaseFactory factory = new SimpleMongoClientDatabaseFactory("mongodb://mongodb:1234@localhost:27017/migration?authSource=admin");
+        MongoTemplate mongoTemplate = new MongoTemplate(factory);
+        return new MongoItemWriterBuilder<RecordsDocument>().template(mongoTemplate).collection("records").build();
     }
-
 
 }

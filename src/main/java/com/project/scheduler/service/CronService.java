@@ -1,6 +1,7 @@
 package com.project.scheduler.service;
 
 import com.project.scheduler.entity.CronPgEntity;
+import com.project.scheduler.exception.DataValidationException;
 import com.project.scheduler.model.CronRequest;
 import com.project.scheduler.model.CronResponse;
 import com.project.scheduler.repository.CronPgEntityRepository;
@@ -9,8 +10,11 @@ import org.springframework.scheduling.support.CronExpression;
 import org.springframework.stereotype.Service;
 
 import java.sql.Timestamp;
+import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.temporal.TemporalAdjusters;
+import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
@@ -30,14 +34,23 @@ public class CronService {
         validateCronExpression(cronExpression);
         Optional<CronPgEntity> existing = repository.findByJobName(jobName);
         if (existing.isPresent()) {
-            updateCronExpression(jobName, cronExpression, existing);
+                validateExistingCronExpression(existing, cronExpression);
+                updateCronExpression(jobName, cronExpression, existing);
         } else {
             addCronExpression(jobName, cronExpression);
         }
-        String upcomingSunday = fetchNextRun(cronExpression);
+        Timestamp upcomingSunday = fetchNextRun();
         return new CronResponse().builder().jobName(jobName).cronExpression(cronExpression)
                 .detail(existing.isPresent() ? "Cron expression updated successfully." : "New cron expression added successfully.")
-                .nextRun(String.valueOf(upcomingSunday)).build();
+                .nextRun(upcomingSunday).build();
+    }
+
+    private void validateExistingCronExpression(Optional<CronPgEntity> existing, String cronExpression) {
+        String existingCronExpression = existing.get().getCronExpression();
+        boolean status = existingCronExpression.equals(cronExpression);
+        if (status) {
+            throw new DataValidationException("No change required - Identical cron expression already exists in DB.");
+        }
     }
 
     private void validateCronExpression(String cronExpression) {
@@ -45,7 +58,7 @@ public class CronService {
             CronExpression.parse(cronExpression);
         } catch (Exception e) {
             log.error("Provided cron expression format : {} is invalid.", cronExpression);
-//            throw new BadRequestException("Provided cron expression format : " + expression + "is invalid.");//Add Global Exception + also add spring security
+            throw new DataValidationException("Invalid Cron Expression format provided: "+cronExpression);
         }
     }
 
@@ -61,18 +74,21 @@ public class CronService {
         repository.save(entity);
     }
 
-    private String fetchNextRun(String cronExpression) {
-        return String.valueOf(CronExpression.parse(cronExpression).next(LocalDateTime.now()));
+    private Timestamp fetchNextRun() {
+        return Timestamp.valueOf(LocalDateTime.now().with(TemporalAdjusters.nextOrSame(DayOfWeek.SUNDAY)));
     }
 
-
-    public String getCronExpression(String migrationcron) {
-        Optional<CronPgEntity> entity = repository.findByJobName(migrationcron);
-        if (entity.isPresent()) {
-            log.info("Available in DB {}", entity.get().getCronExpression());
-        } else {
-            log.info("Not Available in DB so set as : 0 */1 * * * ?");
+    public String getCronExpression(String migrationCron) {
+        Optional<CronPgEntity> entity = null;
+        try {
+            entity = repository.findByJobName(migrationCron);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
         return entity.isPresent() ? entity.get().getCronExpression() : "0 */1 * * * ?";
+    }
+
+    public List<CronPgEntity> findAllCron() {
+        return repository.findAll();
     }
 }

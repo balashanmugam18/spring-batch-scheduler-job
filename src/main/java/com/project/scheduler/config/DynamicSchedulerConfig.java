@@ -14,17 +14,16 @@ import org.springframework.scheduling.support.CronTrigger;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.Locale;
 
 @Slf4j
 @Configuration
-public class DynamicScheduler implements SchedulingConfigurer {
+public class DynamicSchedulerConfig implements SchedulingConfigurer {
 
     private final Job job;
     private final JobOperator jobOperator;
     private final CronService cronService;
 
-    public DynamicScheduler(Job job, JobOperator jobOperator, CronService cronService) {
+    public DynamicSchedulerConfig(Job job, JobOperator jobOperator, CronService cronService) {
         this.job = job;
         this.jobOperator = jobOperator;
         this.cronService = cronService;

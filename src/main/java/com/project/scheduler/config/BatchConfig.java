@@ -3,6 +3,7 @@ package com.project.scheduler.config;
 import com.project.scheduler.batch.RecordProcessor;
 import com.project.scheduler.entity.RecordsDocument;
 import com.project.scheduler.entity.RecordsPgEntity;
+import com.project.scheduler.listener.JobListener;
 import com.project.scheduler.repository.RecordsPgEntityRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.configuration.annotation.StepScope;
@@ -12,7 +13,6 @@ import org.springframework.batch.core.listener.ChunkListener;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.Step;
 import org.springframework.batch.core.step.builder.StepBuilder;
-import org.springframework.batch.infrastructure.item.Chunk;
 import org.springframework.batch.infrastructure.item.ItemProcessor;
 import org.springframework.batch.infrastructure.item.data.MongoItemWriter;
 import org.springframework.batch.infrastructure.item.data.RepositoryItemReader;
@@ -49,17 +49,7 @@ public class BatchConfig {
 
     @Bean
     public ChunkListener migrationChunkListener() {
-        return new ChunkListener<RecordsPgEntity, RecordsDocument>() {
-            @Override
-            public void afterChunk(Chunk<RecordsDocument> chunk) {  // New signature
-                log.info("Wrote {} records to migrationdb", chunk.size());
-            }
-
-            @Override
-            public void beforeChunk(Chunk<RecordsPgEntity> chunk) {
-                log.info("Reading chunk of {} PG records", chunk.size());
-            }
-        };
+        return new JobListener().migrationChunkListener();
     }
 
     @Bean
@@ -76,7 +66,7 @@ public class BatchConfig {
 
         long totalCount = pgRepository.countByRecordPublishDateBetween(startDate, endDate);
         if (totalCount == 0) {
-            log.warn("No records Mon({})-Sun({}) - skipping reader", startDate.toInstant(), endDate.toInstant());// Return empty reader (Spring Batch handles gracefully)
+            log.warn("No records in DB for Mon({})-Sun({}) - skipping reader", startDate.toInstant(), endDate.toInstant());// Return empty reader (Spring Batch handles gracefully)
         } else {
             log.info("Migrating {} records Mon({})-Sun({})", totalCount, startDate.toInstant(), endDate.toInstant());
         }

@@ -1,3 +1,4 @@
+/*
 package com.project.scheduler.config;
 
 import com.zaxxer.hikari.HikariDataSource;
@@ -37,4 +38,4 @@ public class PostgresConfig {
         log.info("pgURL = " + pgURL);
         return DataSourceBuilder.create().type(HikariDataSource.class).url(pgURL).driverClassName(driverClassName).username(pgUserName).password(pgPwd).build();
     }
-}
+}*/

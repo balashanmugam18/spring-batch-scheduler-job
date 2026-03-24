@@ -14,6 +14,21 @@ Designed for scheduled runs with configurable date ranges, chunked processing, a
 
 **Built for enterprise-scale batch jobs** - handles 10K+ records efficiently.
 
+## 📈 Development Evolution
+
+**From prototype to production-grade scheduler:**
+```
+v1.0 → Basic @Scheduled (static cron)
+│ "0 0 6 ? * SUN" – Weekly Sunday 6 AM
+│
+v2.0 → SchedulingConfigurer (fetches cron from DB)
+│ Cron expressions stored/retrieved by jobName
+│
+v3.0 → API-Driven✅ LIVE (dynamic cron)
+PUT - /api/scheduler/cron/upsert(add + update)
+Zero-downtime cron updates
+✅ Updates apply on NEXT RUN - NO restart needed!
+```
 ## 🛠 Tech Stack
 
 - **Java 17**
@@ -47,28 +62,38 @@ Designed for scheduled runs with configurable date ranges, chunked processing, a
 
 ### ⏰ **Cron Scheduling** ✅ **LIVE**
 
-## 📡 Batch Job Details
-- **@Scheduled(cron = "0 0 6 ? * SUN")** # Weekly Sunday 6 AM IST
-- **Weekly mode:** Mon-Sun range
+## 📡 Batch Job Details (Legacy – Static Scheduling)
+> 🔁 This static cron-based scheduling was used in the initial version and has now been replaced by the **dynamic, DB-driven scheduler**. Kept here only for reference.
 
+- `@Scheduled(cron = "0 0 6 ? * SUN")` – Weekly Sunday 6 AM IST
+- **Weekly mode:** Processes Mon–Sun date range
+
+
+## 🎛️ Dynamic Scheduling (Current)
+- Replaces old `@Scheduled` static config
+- Uses `DynamicSchedulerConfig` (implements `SchedulingConfigurer`)
+- Reads cron from DB based on `jobName`→ Next run calculation
+- API:
+    - `PUT /api/scheduler/cron/upsert`
+    - `GET /api/scheduler/cron`
+- Updates apply on NEXT RUN - No restart required!
 
 ## 📂 Project Structure
 ```
 src/
 ├── config/
-│ └── BatchConfig.java # Job/Step beans
-|    ├──reader/
-|    │  └── PostgresItemReader
-|    ├──processer/
-│    |  └── RecordProcessor.java implements ItemProcessor
-|    └── writer/
-│       └── MongoItemWriter
+│  ├── BatchConfig.java # Job/Step beans
+|  |  ├──reader/
+|  |  |   └── PostgresItemReader
+|  |  ├──processer/
+│  |  |   └── RecordProcessor.java implements ItemProcessor
+|  |  └── writer/
+│  |      └── MongoItemWriter
+|  └── DynamicSchedulerConfig # implements SchedulingConfigurer - runnableJob, TriggerContext
 ├── batch/
-│ └── RecordProcessor.java
-├── scheduler/
-│ └── Scheduler.java
+│       └── RecordProcessor.java
 ├── listener/
-│ └── JobListener.java
+│       └── JobListener.java
 ├── entity
 ├── repository
 └── resources/
@@ -76,29 +101,37 @@ src/
 ```
 
 ### 🧪 Key Challenges Solved
-- **Date filtering:** BETWEEN :startDate AND :endDate (parameterized)
-- **Mongo port conflict:** Custom mongodb://mongodb:1234/...
-- **Chunk optimization:** 1000 records/commit (tunable)
-- **Dual DB:** Postgres Reader → Mongo Writer
-- **Job monitoring:** Spring Batch JobRepository
+- **✅ Date filtering:** BETWEEN :startDate AND :endDate (parameterized)
+- **✅ Mongo port conflict:** Custom mongodb://mongodb:1234/...
+- **✅ Chunk optimization:** 1000 records/commit (tunable)
+- **✅ Dual DB:** Postgres Reader → Mongo Writer
+- **✅ Job monitoring:** Spring Batch JobRepository
+- **✅ Dynamic cron**: API → DB → Scheduler (zero downtime)
+- **✅ Global exceptions**: `@RestControllerAdvice` + custom exceptions
 
 ### 🧠 What I Learned
-- **Spring Batch lifecycle:** Reader/Processor/Writer pattern
-- **Cron scheduling:** Production cron - Timezone-aware scheduling (IST)
-- **Job parameters:** Dynamic startDate/endDate injection
-- **Chunk processing:** Memory-efficient large datasets
-- **MongoDB Spring Data:** Custom MongoItemWriter- Bulk operations
-- **Production scheduling:** @EnableBatchProcessing + @EnableScheduling
-- **Dynamic Job params:** Date range injection
+- **Spring Batch lifecycle**: Reader/Processor/Writer pattern mastery
+- **Dynamic scheduling**: Custom `DynamicScheduler extends SchedulingConfigurer` - cron from DB
+- **Job parameters**: Dynamic `startDate/endDate` injection for generic periods
+- **Chunk processing**: Memory-efficient 1000-record commits
+- **MongoDB integration**: Custom `MongoItemWriter` + bulk operations
+- **Production cron**: **`SchedulingConfigurer`** (DB-driven cron via API)
+- **API-driven scheduling**: `PUT /api/scheduler/cron/upsert` - add/update cron expressions
+- **DB-driven triggers**: Fetch cron by **JOB_NAME** for next run
+- **Validation step**: Pre-processing checks for cron expressions
+- **Global error handling**: Custom exceptions + `@RestControllerAdvice`
+- **Swagger OpenAPI**: Auto-docs at `/swagger-ui.html`
+
+
+### 🔧 Access Swagger UI: http://localhost:8080/swagger-ui.html
 
 ### 🔜 Upcoming Features
 - **Multi-threaded steps** (parallel processing)
-- **Validation step** (pre-processing checks)
 - **Export job status** (CSV/PDF reports)
 - **Micrometer monitoring** (execution metrics)
 
 ### 📌 Status
-- **Cron scheduling LIVE.** Daily migration working. Scaling to multi-threaded next.
+- **Cron scheduling LIVE.** Periodical migration working. Scaling to multi-threaded next.
 
 ## 👨‍💻 Author
 
